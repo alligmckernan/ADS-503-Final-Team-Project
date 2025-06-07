@@ -1,0 +1,104 @@
+---
+title: "Heart Failure Prediction – Data Preprocessing"
+author: "Team 4: Jorge Roldan, Nancy Walker, Alli McKernan"
+format: pdf
+editor: visual
+---
+
+## Introduction
+
+This document outlines the data cleaning and preprocessing steps performed on the Heart Failure Prediction dataset.
+
+## 1. Load Required Libraries
+
+We begin by loading necessary packages for data wrangling, preprocessing, and visualization.
+
+```{r}
+library(tidyverse)
+library(caret)
+library(DataExplorer)
+```
+
+## 2. Load and Inspect the Dataset
+
+We load the heart.csv dataset and conduct an initial inspection of its structure and contents.
+
+```{r}
+heart_data <- read.csv("heart.csv")
+
+# View structure and summary
+str(heart_data)
+summary(heart_data)
+```
+
+## 3. Check for Missing Values
+
+It's important to verify that the dataset does not contain missing values that could interfere with modeling.
+
+```{r}
+sapply(heart_data, function(x) sum(is.na(x)))
+```
+
+## 4. Convert Categorical Variables
+
+Categorical variables are converted to factors to ensure compatibility with modeling algorithms.
+
+```{r}
+heart_data$HeartDisease <- factor(heart_data$HeartDisease, levels = c(0, 1), labels = c("No", "Yes"))
+heart_data$Sex <- as.factor(heart_data$Sex)
+heart_data$ChestPainType <- as.factor(heart_data$ChestPainType)
+heart_data$RestingECG <- as.factor(heart_data$RestingECG)
+heart_data$ExerciseAngina <- as.factor(heart_data$ExerciseAngina)
+heart_data$ST_Slope <- as.factor(heart_data$ST_Slope)
+```
+
+## 5. Explore for Low-Variance Features
+
+Features with near-zero variance do not contribute much to prediction and may be dropped.
+
+```{r}
+nzv <- nearZeroVar(heart_data, saveMetrics = TRUE)
+nzv
+```
+
+## 6. Split the Data into Training and Testing Data sets 
+
+```{r}
+#create training dataset for heart_data_scaled #80% of data to the trianing dataset 
+set.seed(100) 
+trainingRows <- createDataPartition(heart_data$HeartDisease, p = .80, list = FALSE)
+
+#subset training and test datasets 
+trainingData <- heart_data[trainingRows,] 
+testingData <- heart_data[-trainingRows,]
+```
+
+## 6. Normalize Numeric Features
+
+We scale and center the numeric variables to prepare them for algorithms sensitive to feature scale.
+
+```{r}
+numeric_features <- trainingData %>%
+  select(where(is.numeric)) %>%
+  names()
+
+preproc <- preProcess(trainingData[, numeric_features], method = c("center", "scale"))
+heart_data_train_scaled <- predict(preproc, heart_data)
+```
+
+## 7. Final Data Check
+
+We perform a final check to ensure the cleaned dataset is ready for modeling.
+
+```{r}
+str(heart_data_train_scaled)
+summary(heart_data_train_scaled)
+```
+
+## 8. Export the Cleaned Data set
+
+```{r}
+write.csv(heart_data_train_scaled, "heart_preprocessed_training.csv", row.names = FALSE)
+write.csv(testingData,"heart_preprocessed_test.csv", row.names = FALSE )
+
+```

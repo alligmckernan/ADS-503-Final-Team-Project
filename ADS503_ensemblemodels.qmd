@@ -1,0 +1,52 @@
+---
+title: "Heart Failure Prediction – Data Preprocessing"
+author: "Team 4: Jorge Roldan, Nancy Walker, Alli McKernan"
+format: 
+    html: 
+        toc: true
+    pdf: default
+editor: visual
+---
+
+## Introduction
+
+This document outlines the ensemble modeling on the preprocessed Heart Failure Prediction dataset.
+
+## 1. Load Required Libraries
+
+```{r}
+
+```
+
+## 2. Import Training and Testing Data sets 
+
+```{r}
+heart_data_train <- read.csv("heart_preprocessed_training.csv")
+heart_data_test <- read.csv("heart_preprocessed_test.csv")
+```
+
+## 3. Ensemble Models
+
+### Decision Tree 
+
+```{r}
+
+```
+
+### Random Forest  
+
+```{r}
+
+```
+
+### K-Nearest Neighbors 
+
+```{r}
+
+```
+
+### Neural Network
+
+```{r}
+
+```

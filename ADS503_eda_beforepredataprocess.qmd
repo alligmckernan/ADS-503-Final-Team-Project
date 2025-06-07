@@ -1,0 +1,90 @@
+---
+title: "Heart Failure Prediction – Data Preprocessing"
+author: "Team 4: Jorge Roldan, Nancy Walker, Alli McKernan"
+format: 
+    html: 
+        toc: true
+    pdf: default
+editor: visual
+---
+
+## Introduction
+
+This document outlines the exploratory data analysis on the preprocessed Heart Failure Prediction data set.
+
+## 1. Load Libraries
+
+```{r warning=FALSE, message=FALSE}
+library(tidyverse)
+library(GGally)
+library(Hmisc)
+```
+
+## 2. Load Data Set
+
+```{r}
+heart_data <- read.csv("heart.csv")
+
+# View structure and summary
+str(heart_data)
+summary(heart_data)
+```
+
+## 3. Data Visualizations For Numeric Variables
+
+```{r, fig.width=8, fig.height=8}
+#Boxplot
+boxplot(heart_data[sapply(heart_data, is.numeric)],
+        main = "Boxplot of all numeric Predictor Variables",
+        xlab = "Predictor Variables")
+
+#Histogram 
+hist.data.frame(heart_data[sapply(heart_data, is.numeric)]) # Histogram of all data features  
+
+pairs(heart_data[sapply(heart_data, is.numeric)]) # pairwise scatter plots of predictor variables 
+```
+
+## 4. Correlation of Numeric Variables
+
+```{r, fig.width=10, fig.height=10}
+#corrleation 
+corr_matrix <- cor(heart_data[sapply(heart_data, is.numeric)])
+corr_matrix
+
+library(corrplot)
+#hierarchical clustering to show features with high correlations 
+corrplot(corr_matrix, method = "circle", order = "hclust",
+         type="lower", outline = TRUE)
+```
+
+## 5. Visualization for Categorical Variables
+
+```{r, fig.width=10, fig.height=10}
+#boxplots for categorical variables 
+par(mfrow = c(1,6)) #Plot all barplots in the same figure output
+#Sex
+barplot(table(heart_data$Sex),
+        main ="Bar Plot of Sex",
+        ylab="Count",
+        col= "azure3")
+#ChestPainType 
+barplot(table(heart_data$ChestPainType),
+        main ="Bar Plot of Chest Pain Type",
+        col= "azure3")
+#RestingECG
+barplot(table(heart_data$RestingECG),
+        main ="Bar Plot of Resting ECG",
+        col= "azure3")
+#ExerciseAngina 
+barplot(table(heart_data$ExerciseAngina),
+        main ="Bar Plot of Exercise Angina",
+        col= "azure3")
+#ST_Slope 
+barplot(table(heart_data$ST_Slope),
+        main ="Bar Plot of ST SLope",
+        col= "azure3")
+#HeartDisease 
+barplot(table(heart_data$HeartDisease),
+        main ="Bar Plot of Heart Disease",
+        col=c("coral", "cornflowerblue"))
+```
