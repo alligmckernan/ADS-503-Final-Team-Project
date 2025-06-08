@@ -1,0 +1,105 @@
+---
+title: "Heart Failure Prediction – Linear Modeling"
+author: "Alli McKernan"
+format: pdf
+editor: visual
+---
+
+## Introduction
+
+This document builds on the preprocessed heart failure dataset to apply and evaluate four linear classification models: logistic regression, ridge regression, lasso regression, and elastic net. These models will help establish a performance baseline for comparison with non-linear and ensemble models later in the project.
+
+## 1. Load Required Libraries
+
+```{r}
+# Load required libraries
+library(tidyverse)
+library(caret)
+library(glmnet)
+
+# Load the preprocessed dataset
+heart_train <- read.csv("heart_preprocessed_training.csv")
+heart_test <- read.csv("heart_preprocessed_test.csv")
+
+# Convert HeartDisease to factor 
+heart_train$HeartDisease <- factor(heart_train$HeartDisease, levels = c("No", "Yes"))
+heart_test$HeartDisease <- factor(heart_test$HeartDisease, levels = c("No", "Yes"))
+```
+
+## 2. Load Pre-Split Training and Testing Data
+
+```{r}
+# Data already split during preprocessing
+# Loaded as heart_train and heart_test
+```
+
+## 3. Logistic Regression (Baseline)
+
+```{r}
+log_model <- glm(HeartDisease ~ ., data = heart_train, family = binomial)
+summary(log_model)
+
+# Predict and evaluate
+log_preds <- predict(log_model, heart_test, type = "response")
+log_class <- ifelse(log_preds > 0.5, "Yes", "No") |> factor(levels = c("No", "Yes"))
+
+confusionMatrix(log_class, heart_test$HeartDisease)
+```
+
+## 4. Prepare Data for glmnet Models
+
+```{r}
+x_train <- model.matrix(HeartDisease ~ ., heart_train)[, -1]
+y_train <- heart_train$HeartDisease
+
+x_test <- model.matrix(HeartDisease ~ ., heart_test)[, -1]
+y_test <- heart_test$HeartDisease
+
+# Convert factor to binary numeric (0 = No, 1 = Yes)
+y_train_num <- as.numeric(y_train) - 1
+y_test_num <- as.numeric(y_test) - 1
+```
+
+## 5. Ridge Logistic Regression (alpha = 0)
+
+```{r}
+ridge_model <- cv.glmnet(x_train, y_train_num, alpha = 0, family = "binomial")
+ridge_preds <- predict(ridge_model, newx = x_test, s = "lambda.min", type = "response")
+ridge_class <- ifelse(ridge_preds > 0.5, "Yes", "No") |> factor(levels = c("No", "Yes"))
+
+confusionMatrix(ridge_class, y_test)
+```
+
+## 6. Lasso Logistic Regression (alpha = 1)
+
+```{r}
+lasso_model <- cv.glmnet(x_train, y_train_num, alpha = 1, family = "binomial")
+lasso_preds <- predict(lasso_model, newx = x_test, s = "lambda.min", type = "response")
+lasso_class <- ifelse(lasso_preds > 0.5, "Yes", "No") |> factor(levels = c("No", "Yes"))
+
+confusionMatrix(lasso_class, y_test)
+```
+
+## 7. Elastic Net Logistic Regression (alpha = 0.5)
+
+```{r}
+elastic_model <- cv.glmnet(x_train, y_train_num, alpha = 0.5, family = "binomial")
+elastic_preds <- predict(elastic_model, newx = x_test, s = "lambda.min", type = "response")
+elastic_class <- ifelse(elastic_preds > 0.5, "Yes", "No") |> factor(levels = c("No", "Yes"))
+
+confusionMatrix(elastic_class, y_test)
+```
+
+## Conclusion
+
+Across all four linear models — logistic regression, ridge, lasso, and elastic net — we observe varying trade-offs between sensitivity (true positive rate) and specificity (true negative rate), which highlights the challenge of predicting heart disease in a balanced and reliable way.
+
+**Logistic Regression (Baseline):** Achieved the **highest overall accuracy (62.3%)** and **balanced accuracy (65.4%)**, suggesting this simpler model may be better suited for the data than the penalized alternatives. It had strong sensitivity (95.1%), indicating it identified most positive cases (heart disease), but with relatively low specificity (35.6%), meaning it misclassified many non-disease cases.
+
+**Ridge Regression (α = 0):** Showed **very high sensitivity (100%)** but **extremely low specificity (2.97%)**, leading to poor balance and an overall accuracy of just **46.5%**. This model appears to overfit on the positive class and performs poorly on distinguishing negative cases.
+
+**Lasso Regression (α = 1):** Performed slightly better than ridge, with an accuracy of **53.0%** and better specificity (15.8%), though still low. It benefits from feature selection, but performance gains were limited compared to logistic regression.
+
+**Elastic Net (α = 0.5):** Yielded only **57.9% accuracy** and **61.8% balanced accuracy**, not improving on the baseline. While elastic net reduced some overfitting, specificity remained low (24.8%).
+
+**Overall**, the plain logistic regression model provided the most balanced performance. While penalized models help with multicollinearity and feature regularization, in this case, they did not significantly enhance classification and often worsened specificity. These results establish a baseline, and suggest that future efforts should explore **non-linear or ensemble models** (e.g., random forest, boosting, or SVM) to better capture complex relationships in the data and improve both sensitivity and specificity.
