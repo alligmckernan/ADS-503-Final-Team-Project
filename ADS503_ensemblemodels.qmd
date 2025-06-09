@@ -1,6 +1,6 @@
 ---
-title: "Heart Failure Prediction – Data Preprocessing"
-author: "Team 4: Jorge Roldan, Nancy Walker, Alli McKernan"
+title: "Heart Failure Prediction – ensemble models"
+author: "Nancy Walker"
 format: 
     html: 
         toc: true
@@ -8,45 +8,185 @@ format:
 editor: visual
 ---
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
 ## Introduction
 
-This document outlines the ensemble modeling on the preprocessed Heart Failure Prediction dataset.
+This document outlines and evaluates the ensemble modeling on the preprocessed Heart Failure Prediction data set. Ensemble models used include decision trees, k-nearest neighbors, and neural networks.
 
 ## 1. Load Required Libraries
 
 ```{r}
+library(caret)
+library(pROC)
 
+set.seed(100)
 ```
 
-## 2. Import Training and Testing Data sets 
+## 2. Import Training and Testing Data sets
 
 ```{r}
-heart_data_train <- read.csv("heart_preprocessed_training.csv")
-heart_data_test <- read.csv("heart_preprocessed_test.csv")
+heart_train <- read.csv("heart_preprocessed_training.csv")
+heart_test <- read.csv("heart_preprocessed_test.csv")
+```
+
+## 4. Prepare data for Modeling 
+
+```{r}
+# Convert HeartDisease to factor 
+heart_train$HeartDisease <- factor(heart_train$HeartDisease, levels = c("No", "Yes"))
+heart_test$HeartDisease <- factor(heart_test$HeartDisease, levels = c("No", "Yes"))
+
+# Convert predictors to factor 
+#train
+heart_train$Sex <- as.factor(heart_train$Sex)
+heart_train$ChestPainType <- as.factor(heart_train$ChestPainType)
+heart_train$RestingECG <- as.factor(heart_train$RestingECG)
+heart_train$ExerciseAngina <- as.factor(heart_train$ExerciseAngina)
+heart_train$ST_Slope <- as.factor(heart_train$ST_Slope)
+#test 
+heart_test$Sex <- as.factor(heart_test$Sex)
+heart_test$ChestPainType <- as.factor(heart_test$ChestPainType)
+heart_test$RestingECG <- as.factor(heart_test$RestingECG)
+heart_test$ExerciseAngina <- as.factor(heart_test$ExerciseAngina)
+heart_test$ST_Slope <- as.factor(heart_test$ST_Slope)
+
+#Define predictors and independent variable 
+x = heart_train[,1:11]
+y = heart_train$HeartDisease
+
+#Create Folds to enable resampling 
+set.seed(100)
+folds <- createFolds(y, returnTrain = TRUE)
+#ensure consistant resampling
+ctrl <- trainControl(method = "repeatedcv", number = 10,
+                     repeats = 5,
+                     summaryFunction = twoClassSummary,
+                     classProbs = TRUE,
+                     savePredictions = "final")
 ```
 
 ## 3. Ensemble Models
 
-### Decision Tree 
+### Decision Tree
 
 ```{r}
+#Decision Tree 
+dtModel <- train(x = x, y= y,
+                 method = "rpart",
+                 tuneLength = 30,
+                 metric = "ROC",
+                 trControl = ctrl)
 
+dtModel
+ggplot(dtModel)
+testResults <- data.frame(obs = heart_test$HeartDisease,
+                          dt = predict(dtModel, heart_test[, 1:11]))
 ```
 
-### Random Forest  
+### K-Nearest Neighbors
 
 ```{r}
+#KNN
+#remove non-zero variance to reduce noise 
+knnDescr <- x[, -nearZeroVar(x)] 
+knnTestDescr <- heart_test[, colnames(knnDescr)]
 
-```
-
-### K-Nearest Neighbors 
-
-```{r}
-
+set.seed(100)
+knnModel <- train(x = knnDescr, y = y,
+                 method = "knn",
+                 tuneGrid = data.frame(k = 1:20),
+                 metric = "ROC",
+                 trControl = ctrl)
+knnModel
+ggplot(knnModel)
+testResults$KNN <- predict(knnModel, knnTestDescr)
 ```
 
 ### Neural Network
 
 ```{r}
+#Neural Networks 
+#hyper parameter grid 
+nnetGrid <- expand.grid(#regularize coefficents,
+                        decay = c(0, 0.01, .1), 
+                        #Unites in a hidden layer
+                        size = c(1:10))
+
+set.seed(100)
+nnModel <- train(x, y,
+                 method = "nnet",
+                 tuneGrid = nnetGrid,
+                 metric = "ROC",
+                 trControl = ctrl,
+                 trace = FALSE, maxit =500)
+nnModel
+ggplot(nnModel)
+ 
+testResults$NN <- predict(nnModel, heart_test[, 1:11])
+```
+
+## 4. Test Results 
+
+```{r}
+train_metrics <- resamples(list(DT = dtModel,
+    KNN = knnModel,
+    NN = nnModel))
+
+summary(train_metrics)
+
+diff(train_metrics) |> summary()
+```
+
+## 5. ROC AUC 
+
+```{r, fig.width=8, fig.height=7}
+#Decision Tree
+dtRoc <- roc(response = dtModel$pred$obs,
+             predictor = dtModel$pred$No,
+             levels = rev(levels(dtModel$pred$obs)))
+#K-Nearest Neighbors
+knnRoc <- roc(response = knnModel$pred$obs,
+             predictor = knnModel$pred$No,
+             levels = rev(levels(knnModel$pred$obs)))
+#Neural Network
+nnRoc <- roc(response = nnModel$pred$obs,
+             predictor = nnModel$pred$No,
+             levels = rev(levels(nnModel$pred$obs)))
+
+### Compare Models using ROC curve
+plot(dtRoc, type = "s", col = 'red', legacy.axes = TRUE)
+plot(knnRoc, type = "s", add = TRUE, col = 'green', legacy.axes = TRUE)
+plot(nnRoc, type = "s", add = TRUE, col = 'blue', legacy.axes = TRUE)
+legend("bottomright", legend=c("DT", "KNN", "NN"),
+       col=c("red", "green","blue"), lwd=2)
+title(main = "Compare ROC curves from different models", outer = TRUE, 
+      line = -1)
+```
+
+## Accuracy 
+
+```{r}
+accuracy <- function(true, pred) mean(true == pred)
+
+cat("DT accuracy:", accuracy(testResults$obs, testResults$dt), "\n")
+cat("KNN accuracy:", accuracy(testResults$obs, testResults$KNN), "\n")
+cat("NN accuracy:", accuracy(testResults$obs, testResults$NN), "\n")
 
 ```
+
+## Conclusion 
+
+Neural networks had the largest ROC(AUC) with a median ROC(AUC) of 0.92, followed by decision trees that had a median ROC(AUC) of 0.89. K-nearest neighbors have the lowest median ROC(AUC) of 0.50.
+
+Neural networks also had the greatest median sensitivity of 0.80, followed by decision trees with a median sensitivity of 0.78. K-nearest neighbors had a median sensitivity of 0.00. K-nearest neighbors had perfect specificity.
+
+Neural networks had a median specificity of 0.90, followed by decision trees with a median specificity of 0.86.
+
+Decision trees have the highest accuracy of 0.83, followed by neural networks with an accuracy of 0.63. K-nearest neighbors have the lowest accuracy of 0.55.
+
+Decision trees and neural network metric are statistically significant using a 95% confidence interval when compared with k-nearest networks. Both have p-values of 2.2e-16 for ROC, sensitivity, and specificity. The difference between decision trees and neural networks is significant but small with p-values of 6.6e-06, 0.098, and 2.06e-05 for ROC, sensitivity, and specificity respectively.
+
+Overall, neural networks have the best predictive ability because it has the highest ROC, balanced sensitivity & specificity.
