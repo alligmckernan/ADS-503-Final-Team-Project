@@ -1,0 +1,36 @@
+{r setup, include=T,echo=T}
+
+#Load data and libraries
+setwd("~/Desktop/")
+heart_data=read.csv("heart.csv")
+library(randomForest)
+
+#format heart disease column so that it is a category
+heart_data$HeartDisease=factor(heart_data$HeartDisease,levels=0:1)
+
+#create trainning and testing data sets
+set.seed(123)
+trainning_ids = sample(nrow(heart_data),0.8 * nrow(heart_data))
+trainning_data = heart_data[trainning_ids,]
+test_data = heart_data[-trainning_ids,]
+
+#build a Random Forest model with training dara
+model1=randomForest(HeartDisease~.,data=trainning_data)
+
+#Make predictions on the test data set
+model1_predictions = data.frame(actual = test_data$HeartDisease,pred= predict(model1,test_data))
+
+#Create confusion matrix for the predictions
+conf_mat=table(model1_predictions)
+print(conf_mat)
+
+#calculate accuracy from the confusion matrix
+model_acc = 100 * sum(diag(conf_mat)) / sum(conf_mat)
+print(model_acc)
+
+library(pROC)
+model1_ROC=roc(as.numeric(as.character(model1_predictions$actual)),as.numeric(as.character(model1_predictions$pred)))
+plot(model1_ROC)
+
+print(auc(model1_ROC))
+```
