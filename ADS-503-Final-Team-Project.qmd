@@ -1,0 +1,440 @@
+---
+title: "Heart Failure Prediction – Data Preprocessing"
+author: "Team 4: Jorge Roldan, Nancy Walker, Alli McKernan"
+format: 
+    html: 
+        toc: true
+    pdf: default
+editor: visual
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+This project aims to evaluate the effectiveness of various predictive modeling techniques in identifying individuals at risk of heart failure. Using the Heart Failure Prediction dataset from Kaggle, we will clean and preprocess the data, apply and compare multiple machine learning algorithms—including linear regression, ensemble methods, and non-linear models—and assess their performance using appropriate metrics. Our objective is to gain insights into which features are most predictive of heart failure and to build an accurate, interpretable model using R.
+
+## Dataset Discription 
+
+Heart Failure Prediction Dataset <https://www.kaggle.com/datasets/fedesoriano/heart-failure-prediction?utm_source=chatgpt.com>
+
+The data set was sourced from Kaggle. It contains 918 observations and 12 variables related to \
+clinical features such as age, blood pressure, cholesterol, and ECG results. The target variable \
+indicates the presence or absence of heart disease. The data set is well-structured and suitable for \
+binary classification tasks.
+
+## Load Libraries 
+
+```{r warning=FALSE, message=FALSE}
+#EDA 
+library(tidyverse)
+library(GGally)
+library(Hmisc)
+
+#preprocessing 
+library(caret)
+library(DataExplorer)
+
+#Linear Modeling 
+library(glmnet)
+
+#Ensemble Modeling 
+library(pROC)
+
+seed <- 100
+```
+
+## Load Data set 
+
+```{r}
+heart_data <- read.csv("heart.csv")
+
+# View structure and summary
+str(heart_data)
+summary(heart_data)
+```
+
+# EDA
+
+## Data Visualizations For Numeric Variables
+
+```{r, fig.width=8, fig.height=8}
+#Boxplot
+boxplot(heart_data[sapply(heart_data, is.numeric)],
+        main = "Boxplot of all numeric Predictor Variables",
+        xlab = "Predictor Variables")
+
+#Histogram 
+hist.data.frame(heart_data[sapply(heart_data, is.numeric)]) # Histogram of all data features  
+
+pairs(heart_data[sapply(heart_data, is.numeric)]) # pairwise scatter plots of predictor variables 
+```
+
+## Correlation of Numeric Variables
+
+```{r, fig.width=10, fig.height=10}
+#corrleation 
+corr_matrix <- cor(heart_data[sapply(heart_data, is.numeric)])
+corr_matrix
+
+library(corrplot)
+#hierarchical clustering to show features with high correlations 
+corrplot(corr_matrix, method = "circle", order = "hclust",
+         type="lower", outline = TRUE)
+```
+
+### Notes 
+
+Variables have low to moderate correlation. All variables in data set will be used for modeling.
+
+## Visualization for Categorical Variables
+
+```{r, fig.width=10, fig.height=10}
+#boxplots for categorical variables 
+par(mfrow = c(1,6)) #Plot all barplots in the same figure output
+#Sex
+barplot(table(heart_data$Sex),
+        main ="Bar Plot of Sex",
+        ylab="Count",
+        col= "azure3")
+#ChestPainType 
+barplot(table(heart_data$ChestPainType),
+        main ="Bar Plot of Chest Pain Type",
+        col= "azure3")
+#RestingECG
+barplot(table(heart_data$RestingECG),
+        main ="Bar Plot of Resting ECG",
+        col= "azure3")
+#ExerciseAngina 
+barplot(table(heart_data$ExerciseAngina),
+        main ="Bar Plot of Exercise Angina",
+        col= "azure3")
+#ST_Slope 
+barplot(table(heart_data$ST_Slope),
+        main ="Bar Plot of ST SLope",
+        col= "azure3")
+#HeartDisease 
+barplot(table(heart_data$HeartDisease),
+        main ="Bar Plot of Heart Disease",
+        col=c("coral", "cornflowerblue"))
+```
+
+# Pre-processing 
+
+## Check for Missing Values
+
+It's important to verify that the dataset does not contain missing values that could interfere with modeling.
+
+```{r}
+sapply(heart_data, function(x) sum(is.na(x)))
+```
+
+## Convert Categorical Variables
+
+Categorical variables are converted to factors to ensure compatibility with modeling algorithms.
+
+```{r}
+heart_data$HeartDisease <- factor(heart_data$HeartDisease, levels = c(0, 1), labels = c("No", "Yes"))
+heart_data$Sex <- as.factor(heart_data$Sex)
+heart_data$ChestPainType <- as.factor(heart_data$ChestPainType)
+heart_data$RestingECG <- as.factor(heart_data$RestingECG)
+heart_data$ExerciseAngina <- as.factor(heart_data$ExerciseAngina)
+heart_data$ST_Slope <- as.factor(heart_data$ST_Slope)
+```
+
+## Explore for Low-Variance Features
+
+Features with near-zero variance do not contribute much to prediction and may be dropped.
+
+```{r}
+nzv <- nearZeroVar(heart_data, saveMetrics = TRUE)
+nzv
+```
+
+## Split the Data into Training and Testing Data sets
+
+```{r}
+#create training dataset for heart_data_scaled #80% of data to the trianing dataset 
+set.seed(seed) 
+trainingRows <- createDataPartition(heart_data$HeartDisease, p = .80, list = FALSE)
+
+#subset training and test datasets 
+trainingData <- heart_data[trainingRows,] 
+testingData <- heart_data[-trainingRows,]
+```
+
+## Normalize Numeric Features
+
+We scale and center the numeric variables in the training data set to prepare them for algorithms sensitive to feature scale. Testing data set is not normalized to ensure unbiased evaluation.
+
+```{r}
+numeric_features <- trainingData %>%
+  select(where(is.numeric)) %>%
+  names()
+
+preproc <- preProcess(trainingData[, numeric_features], method = c("center", "scale"))
+heart_data_train_scaled <- predict(preproc, trainingData)
+```
+
+## Final Data Check
+
+We perform a final check to ensure the cleaned dataset is ready for modeling.
+
+```{r}
+str(heart_data_train_scaled)
+summary(heart_data_train_scaled)
+```
+
+## Model Preparation 
+
+```{r}
+# rename the preprocessed dataset
+heart_train <- heart_data_train_scaled
+heart_test <- testingData
+
+#Define predictors and independent variable 
+x = heart_train[,1:11]
+y = heart_train$HeartDisease
+
+set.seed(100)
+#ensure consistant resampling
+ctrl <- trainControl(method = "repeatedcv", number = 10,
+                     repeats = 5,
+                     summaryFunction = twoClassSummary,
+                     classProbs = TRUE,
+                     savePredictions = "final")
+```
+
+# Post Preprocessing Data visualizations 
+
+## Data Visualizations For Numeric Variables
+
+```{r, fig.width=8, fig.height=8}
+#Boxplot
+boxplot(heart_train[sapply(heart_train, is.numeric)],
+        main = "Boxplot of all numeric Predictor Variables",
+        xlab = "Predictor Variables")
+
+#Histogram 
+hist.data.frame(heart_train[sapply(heart_train, is.numeric)]) # Histogram of all data features  
+
+pairs(heart_train[sapply(heart_train, is.numeric)]) # pairwise scatter plots of predictor variables 
+```
+
+# Linear Modeling 
+
+## Logistic Regression (Baseline)
+
+```{r}
+#method = "glm"
+
+#move testResults data.frame creation to first created model when ready 
+#testResults <- data.frame(obs = heart_test$HeartDisease, <modelname> = predict(<modelname>, heart_test[, 1:11]))
+```
+
+## Ridge Logistic Regression (alpha = 0)
+
+```{r, fig.width=8, fig.height=7}
+#ridgeGrid <- expand.grid(alpha = 0, lambda = seq(0, .1, length = 15))
+
+#method = "glmnet" 
+
+#plot model for view of tuning grid 
+
+#testResults$<modelname> <- predict(<modelname, heart_test[,1:11])
+```
+
+## Lasso Logistic Regression (alpha = 1)
+
+```{r, fig.width=8, fig.height=7}
+#lassoGrid <- expand.grid(alpha = 1, lambda = seq(0, .1, length = 15))
+
+#method = "glmnet"
+
+#plot model for view of tuning grid  
+
+#testResults$<modelname> <- predict(<modelname, heart_test[,1:11])
+```
+
+## Elastic Net Logistic Regression (alpha = 0.5)
+
+```{r, fig.width=8, fig.height=7}
+#enetGrid <- expand.grid(lambda = c(0, 0.01, .1),fraction = seq(.05, 1, length = 20))
+
+#method = "glmnet" 
+
+#plot model for view of tuning grid 
+
+# #testResults$<modelname> <- predict(<modelname, heart_test[,1:11])
+```
+
+## Linear Modeling Final Notes 
+
+# Non-Linear Modeling 
+
+## Support Vector Machine with radial basis function
+
+```{r}
+#method = "svmRaadial" 
+
+##testResults$<modelname> <- predict(<modelname, heart_test[,1:11])
+```
+
+## Extreme Gradient Boosting binary classification
+
+```{r}
+#method = "xgbTree"
+
+#testResults$<modelname> <- predict(<modelname, heart_test[,1:11])
+```
+
+## Naive Bayes
+
+```{r}
+#method = "nb"
+
+#testResults$<modelname> <- predict(<modelname, heart_test[,1:11])
+```
+
+## Ensemble Models
+
+### Decision Tree
+
+```{r}
+#Decision Tree 
+dtModel <- train(x = x, y= y,
+                 method = "rpart",
+                 tuneLength = 30,
+                 metric = "ROC",
+                 trControl = ctrl)
+
+dtModel
+testResults <- data.frame(obs = heart_test$HeartDisease,
+                          DT = predict(dtModel, heart_test[, 1:11]))
+```
+
+## Random Forest 
+
+```{r, fig.width=5, fig.height=3}
+#Random Forest 
+#focused range 
+mtryValues <- 2:4
+
+set.seed(seed)
+
+rfModel <- train(x = x, 
+                y = y,
+                method = "rf",
+                ntree = 1000,
+                tuneGrid = data.frame(mtry = mtryValues),
+                metric = "ROC",
+                trControl = ctrl)
+rfModel
+ggplot(rfModel)
+testResults$RF <- predict(rfModel, heart_test[, 1:11] )
+```
+
+### K-Nearest Neighbors
+
+```{r}
+#KNN
+#remove non-zero variance to reduce noise 
+knnDescr <- x[, -nearZeroVar(x)] 
+knnTestDescr <- heart_test[, colnames(knnDescr)]
+
+set.seed(100)
+knnModel <- train(x = knnDescr, y = y,
+                 method = "knn",
+                 tuneGrid = data.frame(k = 1:20),
+                 metric = "ROC",
+                 trControl = ctrl)
+knnModel
+testResults$KNN <- predict(knnModel, knnTestDescr)
+```
+
+### Neural Network
+
+```{r, fig.width=5, fig.height=3}
+#Neural Networks 
+#hyper parameter grid 
+nnetGrid <- expand.grid(#regularize coefficents,
+                        decay = c(0, 0.01, .1), 
+                        #Unites in a hidden layer
+                        size = c(1:10))
+
+set.seed(100)
+nnModel <- train(x, y,
+                 method = "nnet",
+                 tuneGrid = nnetGrid,
+                 metric = "ROC",
+                 trControl = ctrl,
+                 trace = FALSE, maxit =500)
+nnModel
+ggplot(nnModel)
+ 
+testResults$NN <- predict(nnModel, heart_test[, 1:11])
+```
+
+# Test Results
+
+```{r}
+#add linear and non-linear models when ready 
+train_metrics <- resamples(list(DT = dtModel, 
+                                RF= rfModel, 
+                                KNN = knnModel,
+                                NN = nnModel))
+
+summary(train_metrics)
+
+diff(train_metrics) |> summary()
+```
+
+## ROC AUC
+
+```{r, fig.width=8, fig.height=7}
+#Decision Tree
+dtRoc <- roc(response = dtModel$pred$obs,
+             predictor = dtModel$pred$No,
+             levels = rev(levels(dtModel$pred$obs)))
+#Random Forest 
+rfRoc <- roc(response = rfModel$pred$obs,
+             predictor = rfModel$pred$No,
+             levels = rev(levels(rfModel$pred$obs)))
+#K-Nearest Neighbors
+knnRoc <- roc(response = knnModel$pred$obs,
+             predictor = knnModel$pred$No,
+             levels = rev(levels(knnModel$pred$obs)))
+#Neural Network
+nnRoc <- roc(response = nnModel$pred$obs,
+             predictor = nnModel$pred$No,
+             levels = rev(levels(nnModel$pred$obs)))
+
+#add linear and non-linear models when ready 
+
+### Compare Models using ROC curve
+plot(dtRoc, type = "s", col = 'red', legacy.axes = TRUE)
+plot(rfRoc, type = "s", add = TRUE, col = 'purple', legacy.axes = TRUE)
+plot(knnRoc, type = "s", add = TRUE, col = 'green', legacy.axes = TRUE)
+plot(nnRoc, type = "s", add = TRUE, col = 'blue', legacy.axes = TRUE)
+legend("bottomright", legend=c("DT", "RF", "KNN", "NN"),
+       col=c("red","purple", "green","blue"), lwd=2)
+title(main = "Compare ROC curves from different models", outer = TRUE, 
+      line = -1)
+```
+
+## Accuracy
+
+```{r}
+accuracy <- function(true, pred) mean(true == pred)
+
+#add linear and non-linear models when ready 
+
+cat("DT accuracy:", accuracy(testResults$obs, testResults$DT), "\n")
+cat("RF accuracy:", accuracy(testResults$obs, testResults$RF), "\n")
+cat("KNN accuracy:", accuracy(testResults$obs, testResults$KNN), "\n")
+cat("NN accuracy:", accuracy(testResults$obs, testResults$NN), "\n")
+```
+
+# Conclusion
