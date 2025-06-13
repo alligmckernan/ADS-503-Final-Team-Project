@@ -35,6 +35,8 @@ library(Hmisc)
 library(caret)
 library(DataExplorer)
 library(pROC)
+library(iml)
+library(ggplot2)
 
 seed <- 123
 ```
@@ -53,7 +55,7 @@ summary(heart_data)
 
 ## Data Visualizations For Numeric Variables
 
-```{r, fig.width=8, fig.height=8}
+```{r, fig.width=10, fig.height=5}
 #Boxplot
 boxplot(heart_data[sapply(heart_data, is.numeric)],
         main = "Boxplot of all numeric Predictor Variables",
@@ -67,14 +69,14 @@ pairs(heart_data[sapply(heart_data, is.numeric)]) # pairwise scatter plots of pr
 
 ## Correlation of Numeric Variables
 
-```{r, fig.width=10, fig.height=10}
+```{r, fig.width=8, fig.height=5}
 #corrleation 
 corr_matrix <- cor(heart_data[sapply(heart_data, is.numeric)])
 corr_matrix
 
 library(corrplot)
 #hierarchical clustering to show features with high correlations 
-corrplot(corr_matrix, method = "circle", order = "hclust",
+corrplot(corr_matrix, method = "number", order = "hclust",
          type="lower", outline = TRUE)
 ```
 
@@ -84,33 +86,37 @@ Variables have low to moderate correlation. All variables in data set will be us
 
 ## Visualization for Categorical Variables
 
-```{r, fig.width=10, fig.height=10}
+```{r, fig.width=10, fig.height=3}
 #boxplots for categorical variables 
-par(mfrow = c(1,6)) #Plot all barplots in the same figure output
+par(mfrow = c(1,7)) #Plot all barplots in the same figure output
 #Sex
 barplot(table(heart_data$Sex),
-        main ="Bar Plot of Sex",
+        main ="Sex",
         ylab="Count",
         col= "azure3")
 #ChestPainType 
 barplot(table(heart_data$ChestPainType),
-        main ="Bar Plot of Chest Pain Type",
+        main ="Chest Pain Type",
+        col= "azure3")
+#FastingBS
+barplot(table(heart_data$FastingBS),
+        main ="FastingBS",
         col= "azure3")
 #RestingECG
 barplot(table(heart_data$RestingECG),
-        main ="Bar Plot of Resting ECG",
+        main ="Resting ECG",
         col= "azure3")
 #ExerciseAngina 
 barplot(table(heart_data$ExerciseAngina),
-        main ="Bar Plot of Exercise Angina",
+        main ="Exercise Angina",
         col= "azure3")
 #ST_Slope 
 barplot(table(heart_data$ST_Slope),
-        main ="Bar Plot of ST SLope",
+        main ="ST SLope",
         col= "azure3")
 #HeartDisease 
 barplot(table(heart_data$HeartDisease),
-        main ="Bar Plot of Heart Disease",
+        main ="Heart Disease",
         col=c("coral", "cornflowerblue"))
 ```
 
@@ -204,12 +210,18 @@ ctrl <- trainControl(method = "repeatedcv", number = 10,
 
 ## Data Visualizations For Numeric Variables
 
-```{r, fig.width=8, fig.height=8}
-#Boxplot
-boxplot(heart_train[sapply(heart_train, is.numeric)],
-        main = "Boxplot of all numeric Predictor Variables",
-        xlab = "Predictor Variables")
+```{r, fig.width=8, fig.height=4 }
+par(mfrow=c(1,2))
+#Boxplot before preprocessing
+boxplot(heart_data[sapply(heart_data, is.numeric)],
+        xlab = "Before Preprocessing", col = "lightblue")
 
+#Boxplot after preprocessing
+boxplot(heart_train[sapply(heart_train, is.numeric)],
+        xlab = "After Preprocessing", col = "lightgreen")
+```
+
+```{r, fig.width=8, fig.height=8}
 #Histogram 
 hist.data.frame(heart_train[sapply(heart_train, is.numeric)]) # Histogram of all data features  
 
@@ -363,7 +375,7 @@ dtModel <- train(x = x, y= y,
 testResults$DT <- predict(dtModel, heart_test[, 1:11] )
 ```
 
-## Random Forest
+## Random Forest 
 
 ```{r, fig.width=5, fig.height=3}
 #Random Forest 
@@ -505,6 +517,31 @@ title(main = "Compare ROC curves from diffrent models", outer = TRUE,
       line = -1)
 ```
 
+```{r, fig.width=8, fig.height=7}
+#Plot separate
+#linear models 
+plot(lmRoc, type = "s", col = 'orange2', legacy.axes = TRUE)
+plot(rrRoc, type = "s", add = TRUE, col = 'skyblue1', legacy.axes = TRUE)
+plot(lrRoc, type = "s", add = TRUE, col = 'palevioletred1', legacy.axes = TRUE)
+plot(enRoc, type = "s", add = TRUE, col = 'skyblue4', legacy.axes = TRUE)
+legend("bottomright", legend=c("LM","RR", "LR", "EN"),
+       col=c("orange2","skyblue1","palevioletred1", "skyblue4"), lwd=2)
+title(main = "Compare ROC Curves from Linear Models", outer = TRUE, 
+      line = -1)
+
+#non-linear models
+
+#ensemble models 
+plot(dtRoc, type = "s", col = 'red', legacy.axes = TRUE)
+plot(rfRoc, type = "s", add = TRUE, col = 'purple', legacy.axes = TRUE)
+plot(knnRoc, type = "s", add = TRUE, col = 'green', legacy.axes = TRUE)
+plot(nnRoc, type = "s", add = TRUE, col = 'blue', legacy.axes = TRUE)
+legend("bottomright", legend=c("DT", "RF", "KNN", "NN"),
+       col=c("red","purple", "green","blue"), lwd=2)
+title(main = "Compare ROC Curves from Ensemble Models", outer = TRUE, 
+      line = -1)
+```
+
 ## Accuracy
 
 ```{r}
@@ -520,6 +557,25 @@ cat("DT accuracy:", accuracy(testResults$obs, testResults$DT), "\n")
 cat("RF accuracy:", accuracy(testResults$obs, testResults$RF), "\n")
 cat("KNN accuracy:", accuracy(testResults$obs, testResults$KNN), "\n")
 cat("NN accuracy:", accuracy(testResults$obs, testResults$NN), "\n")
+```
+
+## SHAP
+
+```{r, fig.width=8, fig.height=7}
+#Yadav, A. (2024). SHAP Values in R. Medium. https://medium.com/biased-algorithms/shap-values-in-r-c978a4c830c6
+
+#Create predictor object for optimum model  
+predRF <-  Predictor$new(rfModel, data = heart_test[,1:11], 
+                         y = heart_test$HeartDisease, type = "prob")
+
+#compute Shapley 
+shap_RF <- Shapley$new(predRF, x.interest = heart_test[1, 1:11])
+
+# View the SHAP values (each features contribution to the prediction)
+print(shap_RF$results)
+
+#Creat a summary plot 
+shap_RF$plot() 
 ```
 
 # Conclusion
