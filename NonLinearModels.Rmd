@@ -1,0 +1,109 @@
+---
+title: "Non Linear Models"
+output:
+  pdf_document: default
+  html_document: default
+date: "2025-06-08"
+---
+
+```{r setup, include=T,echo=T}
+
+#Load data and libraries
+setwd("~/Desktop/")
+heart_data=read.csv("heart.csv")
+library(randomForest)
+
+#format heart disease column so that it is a category
+heart_data$HeartDisease=factor(heart_data$HeartDisease,levels=0:1,labels = c("No","Yes"))
+heart_data$FastingBS=factor(heart_data$FastingBS,levels=0:1,labels = c("No","Yes"))
+
+#create trainning and testing data sets
+set.seed(123)
+trainning_ids = sample(nrow(heart_data),0.8 * nrow(heart_data))
+trainning_data = heart_data[trainning_ids,]
+test_data = heart_data[-trainning_ids,]
+
+#build a Random Forest model with training dara
+model1=randomForest(HeartDisease~.,data=trainning_data)
+
+#Make predictions on the test data set
+model1_predictions = data.frame(actual = test_data$HeartDisease,pred= predict(model1,test_data))
+
+#Create confusion matrix for the predictions
+conf_mat=table(model1_predictions)
+print(conf_mat)
+
+#calculate accuracy from the confusion matrix
+model_acc = 100 * sum(diag(conf_mat)) / sum(conf_mat)
+print(model_acc)
+
+library(pROC)
+model1_ROC=roc(as.numeric(as.character(model1_predictions$actual)),as.numeric(as.character(model1_predictions$pred)))
+plot(model1_ROC)
+
+print(auc(model1_ROC))
+
+#Build XGBoost Model
+library(caret)
+
+# Set up training control
+trControl <- trainControl(
+  method = "cv", 
+  number = 5,
+  classProbs = TRUE,
+  summaryFunction = twoClassSummary,
+  verboseIter = FALSE
+)
+
+# Train XGBoost model using caret
+set.seed(42)
+xgb_model <- train(
+  HeartDisease ~ ., 
+  data = trainning_data, 
+  method = "xgbTree",
+  trControl = trControl,
+  metric = "ROC",
+  tuneLength = 5
+)
+
+#Create predictions from XGBoost model
+xgb_model_predictions = data.frame(actual = test_data$HeartDisease,pred= predict(xgb_model,test_data))
+
+#Create confusion matrix for the predictions
+conf_mat2=table(xgb_model_predictions)
+print(conf_mat2)
+
+#calculate accuracy from the confusion matrix
+model_acc2 = 100 * sum(diag(conf_mat2)) / sum(conf_mat2)
+print(model_acc2)
+
+#Calculating ROC and AUC for XGBoost model
+library(pROC)
+xgb_ROC=roc(as.numeric(xgb_model_predictions$actual),as.numeric(xgb_model_predictions$pred))
+plot(xgb_ROC)
+
+print(auc(xgb_ROC))
+
+#Build Naive Bayes Model
+library(naivebayes)
+
+#build a Naive Bayes model with training data
+model3=naive_bayes(HeartDisease~.,data=trainning_data)
+
+#Create predictions from Naive Bayes model
+model3_predictions = data.frame(actual = test_data$HeartDisease,pred= predict(model3,test_data))
+
+#Create confusion matrix for the predictions for Naive Bayes
+conf_mat3=table(model3_predictions)
+print(conf_mat3)
+
+#calculate accuracy from the confusion matrix for Naive Bayes
+model_acc3 = 100 * sum(diag(conf_mat3)) / sum(conf_mat3)
+print(model_acc3)
+
+#Calculating ROC and AUC for Naive Bayes model
+model3_ROC=roc(as.numeric(model3_predictions$actual),as.numeric(model3_predictions$pred))
+plot(model3_ROC)
+
+print(auc(model3_ROC))
+```
