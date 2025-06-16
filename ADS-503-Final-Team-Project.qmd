@@ -10,6 +10,7 @@ editor: visual
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
 ```
 
 # Introduction
@@ -335,28 +336,102 @@ Across all four linear models — logistic regression, ridge, lasso, and elastic
 
 # Non-Linear Modeling
 
-## Support Vector Machine with radial basis function
-
-```{r}
-#method = "svmRaadial" 
-
-##testResults$<modelname> <- predict(<modelname, heart_test[,1:11])
-```
-
 ## Extreme Gradient Boosting binary classification
 
-```{r}
-#method = "xgbTree"
+```{r, fig.width=8, fig.height=7}
+#Used ChatGPT to troubleshoot model 
+#https://chatgpt.com/share/684fe688-ca9c-800f-be55-534a23550567
+library(xgboost)
+# suppress warnings from xgboost
+old_params <- getOption("xgboost.silent")
+options(xgboost.silent = 1) 
 
-#testResults$<modelname> <- predict(<modelname, heart_test[,1:11])
+xgb_grid <- expand.grid(
+  nrounds = 100,                    # # trees
+  max_depth = c(3, 6),              # tree depth
+  eta = c(0.1, 0.3),                # learning rate
+  gamma = 0,                        # no regularization
+  colsample_bytree = 0.8,           # % columns sampled per tree
+  min_child_weight = 1,             # min sum hessian
+  subsample = 0.8                   # % rows sampled per tree
+)
+
+# Train XGBoost model
+set.seed(seed)
+xgb_model <- train(
+  HeartDisease ~ .,
+  data = heart_train, 
+  method = "xgbTree",
+  trControl = ctrl,
+  metric = "ROC",
+  tuneGrid = xgb_grid
+)
+
+# Create predictions on test set
+xgb_model_predictions <- data.frame(
+  actual = heart_test$HeartDisease,
+  pred = predict(xgb_model, heart_test)
+)
+
+# Confusion matrix
+conf_mat2 <- table(Predicted = xgb_model_predictions$pred, Actual = xgb_model_predictions$actual)
+print(conf_mat2)
+
+# Accuracy
+model_acc2 <- 100 * sum(diag(conf_mat2)) / sum(conf_mat2)
+print(model_acc2)
+
+# ROC and AUC
+library(pROC)
+prob_predictions <- predict(xgb_model, heart_test, type = "prob")
+
+xgb_ROC <- roc(heart_test$HeartDisease, prob_predictions$Yes)  # adjust if positive class is "Yes"
+plot(xgb_ROC)
+print(auc(xgb_ROC))
+
+# Save predictions
+testResults$XGB <- predict(xgb_model, heart_test[,1:11])
+
+options(xgboost.silent = old_params)
 ```
 
 ## Naive Bayes
 
 ```{r}
-#method = "nb"
+npGrid <- expand.grid(usekernel = FALSE, fL =1, adjust = 1)
 
-#testResults$<modelname> <- predict(<modelname, heart_test[,1:11])
+set.seed(seed)
+nb_Model <- train(x= x, y = y,
+                  method = "nb",
+                  tuneGrid = npGrid,
+                  trControl = ctrl)
+
+testResults$NB <- predict(nb_Model, heart_test[, 1:11] )
+```
+
+```{r}
+#Build Naive Bayes Model
+library(naivebayes)
+
+#build a Naive Bayes model with training data
+model3=naive_bayes(HeartDisease~.,data=heart_train)
+
+#Create predictions from Naive Bayes model
+model3_predictions = data.frame(actual = heart_test$HeartDisease,pred= predict(model3,heart_test))
+
+#Create confusion matrix for the predictions for Naive Bayes
+conf_mat3=table(model3_predictions)
+print(conf_mat3)
+
+#calculate accuracy from the confusion matrix for Naive Bayes
+model_acc3 = 100 * sum(diag(conf_mat3)) / sum(conf_mat3)
+print(model_acc3)
+
+#Calculating ROC and AUC for Naive Bayes model
+model3_ROC=roc(as.numeric(model3_predictions$actual),as.numeric(model3_predictions$pred))
+plot(model3_ROC)
+
+print(auc(model3_ROC))
 ```
 
 ## Ensemble Models
@@ -375,7 +450,7 @@ dtModel <- train(x = x, y= y,
 testResults$DT <- predict(dtModel, heart_test[, 1:11] )
 ```
 
-## Random Forest 
+## Random Forest
 
 ```{r, fig.width=5, fig.height=3}
 #Random Forest 
@@ -444,6 +519,8 @@ train_metrics <- resamples(list(LM = log_model,
                                 RR = ridge_model,
                                 LR = lasso_model,
                                 EN = elastic_model,
+                                XGB = xgb_model,
+                                NB = nb_Model,
                                 DT = dtModel, 
                                 RF= rfModel, 
                                 KNN = knnModel,
@@ -456,7 +533,7 @@ diff(train_metrics) |> summary()
 
 ## ROC AUC
 
-```{r, fig.width=8, fig.height=7}
+```{r, fig.width=15, fig.height=7}
 #Logistic Regression
 lmRoc <- roc(response = log_model$pred$obs,
              predictor = log_model$pred$No,
@@ -473,6 +550,14 @@ lrRoc <- roc(response = lasso_model$pred$obs,
 enRoc <- roc(response = elastic_model$pred$obs,
              predictor = elastic_model$pred$No,
              levels = rev(levels(elastic_model$pred$obs)))
+#XGBoost
+xgbRoc <- roc(response = xgb_model$pred$obs,
+             predictor = xgb_model$pred$No,
+             levels = rev(levels(xgb_model$pred$obs)))
+#Naive Bayes
+nbRoc <- roc(response = nb_Model$pred$obs,
+             predictor = nb_Model$pred$No,
+             levels = rev(levels(nb_Model$pred$obs)))
 #Decision Tree
 dtRoc <- roc(response = dtModel$pred$obs,
              predictor = dtModel$pred$No,
@@ -493,7 +578,7 @@ nnRoc <- roc(response = nnModel$pred$obs,
 #add non-linear models when ready 
 
 #plot together 
-par(mfrow=c(1,2))
+par(mfrow=c(1,3))
 
 ### Compare Models using ROC curve
 #linear models 
@@ -505,6 +590,10 @@ legend("bottomright", legend=c("LM","RR", "LR", "EN"),
        col=c("orange2","skyblue1","palevioletred1", "skyblue4"), lwd=2)
 
 #non-linear models
+plot(xgbRoc, type = "s", col = 'cyan', legacy.axes = TRUE)
+plot(nbRoc, type = "s", add = TRUE, col = 'coral3', legacy.axes = TRUE)
+legend("bottomright", legend=c("XGB", "NB"),
+       col=c("cyan","coral3"), lwd=2)
 
 #ensemble models 
 plot(dtRoc, type = "s", col = 'red', legacy.axes = TRUE)
@@ -530,6 +619,12 @@ title(main = "Compare ROC Curves from Linear Models", outer = TRUE,
       line = -1)
 
 #non-linear models
+plot(xgbRoc, type = "s", col = 'cyan', legacy.axes = TRUE)
+plot(nbRoc, type = "s", add = TRUE, col = 'coral3', legacy.axes = TRUE)
+legend("bottomright", legend=c("XGB", "NB"),
+       col=c("cyan","coral3"), lwd=2)
+title(main = "Compare ROC Curves from Non-Linear Models", outer = TRUE, 
+      line = -1)
 
 #ensemble models 
 plot(dtRoc, type = "s", col = 'red', legacy.axes = TRUE)
@@ -553,6 +648,8 @@ cat("LM accuracy:", accuracy(testResults$obs, testResults$LM), "\n")
 cat("RR accuracy:", accuracy(testResults$obs, testResults$RR), "\n")
 cat("LR accuracy:", accuracy(testResults$obs, testResults$LR), "\n")
 cat("EN accuracy:", accuracy(testResults$obs, testResults$EN), "\n")
+cat("XGB accuracy:", accuracy(testResults$obs, testResults$XGB), "\n")
+cat("NB accuracy:", accuracy(testResults$obs, testResults$NB), "\n")
 cat("DT accuracy:", accuracy(testResults$obs, testResults$DT), "\n")
 cat("RF accuracy:", accuracy(testResults$obs, testResults$RF), "\n")
 cat("KNN accuracy:", accuracy(testResults$obs, testResults$KNN), "\n")
