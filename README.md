@@ -5,7 +5,7 @@ This repository contains the final project for the ADS 503 course. Our objective
 ## 📁 Contents
 
 - **`heart.csv`**  
-  The dataset used throughout the project. It includes 14 clinical features (e.g., age, cholesterol, chest pain type, max heart rate) and a binary target indicating heart disease presence.
+  The dataset used throughout the project. It includes 12 clinical features (e.g., age, cholesterol, chest pain type, max heart rate) and a binary target indicating heart disease presence.
 
 - **`ADS-503-Final-Team-Project.qmd`**  
   The full analysis and report in Quarto format. This file includes:
