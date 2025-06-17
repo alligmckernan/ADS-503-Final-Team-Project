@@ -1,0 +1,678 @@
+---
+title: "Heart Failure Prediction – Data Preprocessing"
+author: "Team 4: Jorge Roldan, Nancy Walker, Alli McKernan"
+format: 
+    html: 
+        toc: true
+    pdf: default
+editor: visual
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+```
+
+# Introduction
+
+This project aims to evaluate the effectiveness of various predictive modeling techniques in identifying individuals at risk of heart failure. Using the Heart Failure Prediction dataset from Kaggle, we will clean and preprocess the data, apply and compare multiple machine learning algorithms—including linear regression, ensemble methods, and non-linear models—and assess their performance using appropriate metrics. Our objective is to gain insights into which features are most predictive of heart failure and to build an accurate, interpretable model using R.
+
+## Dataset Discription
+
+Heart Failure Prediction Dataset <https://www.kaggle.com/datasets/fedesoriano/heart-failure-prediction?utm_source=chatgpt.com>
+
+The data set was sourced from Kaggle. It contains 918 observations and 12 variables related to\
+clinical features such as age, blood pressure, cholesterol, and ECG results. The target variable\
+indicates the presence or absence of heart disease. The data set is well-structured and suitable for\
+binary classification tasks.
+
+## Load Libraries
+
+```{r warning=FALSE, message=FALSE}
+
+library(tidyverse)
+library(GGally)
+library(Hmisc) 
+library(caret)
+library(DataExplorer)
+library(pROC)
+library(iml)
+library(ggplot2)
+
+seed <- 123
+```
+
+## Load Data set
+
+```{r}
+heart_data <- read.csv("heart.csv")
+
+# View structure and summary
+str(heart_data)
+summary(heart_data)
+```
+
+# EDA
+
+## Data Visualizations For Numeric Variables
+
+```{r, fig.width=10, fig.height=5}
+#Boxplot
+boxplot(heart_data[sapply(heart_data, is.numeric)],
+        main = "Boxplot of all numeric Predictor Variables",
+        xlab = "Predictor Variables")
+
+#Histogram 
+hist.data.frame(heart_data[sapply(heart_data, is.numeric)]) # Histogram of all data features  
+
+pairs(heart_data[sapply(heart_data, is.numeric)]) # pairwise scatter plots of predictor variables 
+```
+
+## Correlation of Numeric Variables
+
+```{r, fig.width=8, fig.height=5}
+#corrleation 
+corr_matrix <- cor(heart_data[sapply(heart_data, is.numeric)])
+corr_matrix
+
+library(corrplot)
+#hierarchical clustering to show features with high correlations 
+corrplot(corr_matrix, method = "number", order = "hclust",
+         type="lower", outline = TRUE)
+```
+
+### Notes
+
+Variables have low to moderate correlation. All variables in data set will be used for modeling.
+
+## Visualization for Categorical Variables
+
+```{r, fig.width=10, fig.height=3}
+#boxplots for categorical variables 
+par(mfrow = c(1,7)) #Plot all barplots in the same figure output
+#Sex
+barplot(table(heart_data$Sex),
+        main ="Sex",
+        ylab="Count",
+        col= "azure3")
+#ChestPainType 
+barplot(table(heart_data$ChestPainType),
+        main ="Chest Pain Type",
+        col= "azure3")
+#FastingBS
+barplot(table(heart_data$FastingBS),
+        main ="FastingBS",
+        col= "azure3")
+#RestingECG
+barplot(table(heart_data$RestingECG),
+        main ="Resting ECG",
+        col= "azure3")
+#ExerciseAngina 
+barplot(table(heart_data$ExerciseAngina),
+        main ="Exercise Angina",
+        col= "azure3")
+#ST_Slope 
+barplot(table(heart_data$ST_Slope),
+        main ="ST SLope",
+        col= "azure3")
+#HeartDisease 
+barplot(table(heart_data$HeartDisease),
+        main ="Heart Disease",
+        col=c("coral", "cornflowerblue"))
+```
+
+# Pre-processing
+
+## Check for Missing Values
+
+It's important to verify that the dataset does not contain missing values that could interfere with modeling.
+
+```{r}
+sapply(heart_data, function(x) sum(is.na(x)))
+```
+
+## Convert Categorical Variables
+
+Categorical variables are converted to factors to ensure compatibility with modeling algorithms.
+
+```{r}
+heart_data$HeartDisease <- factor(heart_data$HeartDisease, levels = c(0, 1), labels = c("No", "Yes"))
+heart_data$Sex <- as.factor(heart_data$Sex)
+heart_data$ChestPainType <- as.factor(heart_data$ChestPainType)
+heart_data$RestingECG <- as.factor(heart_data$RestingECG)
+heart_data$ExerciseAngina <- as.factor(heart_data$ExerciseAngina)
+heart_data$ST_Slope <- as.factor(heart_data$ST_Slope)
+```
+
+## Explore for Low-Variance Features
+
+Features with near-zero variance do not contribute much to prediction and may be dropped.
+
+```{r}
+nzv <- nearZeroVar(heart_data, saveMetrics = TRUE)
+nzv
+```
+
+## Split the Data into Training and Testing Data sets
+
+```{r}
+#create training dataset for heart_data_scaled #80% of data to the trianing dataset 
+set.seed(seed) 
+trainingRows <- createDataPartition(heart_data$HeartDisease, p = .80, list = FALSE)
+
+#subset training and test datasets 
+trainingData <- heart_data[trainingRows,] 
+testingData <- heart_data[-trainingRows,]
+```
+
+## Normalize Numeric Features
+
+We scale and center the numeric variables in the training data set to prepare them for algorithms sensitive to feature scale. Testing data set is not normalized to ensure unbiased evaluation.
+
+```{r}
+numeric_features <- trainingData %>%
+  select(where(is.numeric)) %>%
+  names()
+
+preproc <- preProcess(trainingData[, numeric_features], method = c("center", "scale"))
+heart_data_train_scaled <- predict(preproc, trainingData)
+```
+
+## Final Data Check
+
+We perform a final check to ensure the cleaned dataset is ready for modeling.
+
+```{r}
+str(heart_data_train_scaled)
+summary(heart_data_train_scaled)
+```
+
+## Model Preparation
+
+```{r}
+# rename the preprocessed dataset
+heart_train <- heart_data_train_scaled
+heart_test <- testingData
+
+#Define predictors and dependent variable 
+x = heart_train[,1:11]
+y = heart_train$HeartDisease
+
+set.seed(100)
+#ensure consistant resampling
+ctrl <- trainControl(method = "repeatedcv", number = 10,
+                     repeats = 5,
+                     summaryFunction = twoClassSummary,
+                     classProbs = TRUE,
+                     savePredictions = "final")
+```
+
+# Post Preprocessing Data visualizations
+
+## Data Visualizations For Numeric Variables
+
+```{r, fig.width=8, fig.height=4 }
+par(mfrow=c(1,2))
+#Boxplot before preprocessing
+boxplot(heart_data[sapply(heart_data, is.numeric)],
+        xlab = "Before Preprocessing", col = "lightblue")
+
+#Boxplot after preprocessing
+boxplot(heart_train[sapply(heart_train, is.numeric)],
+        xlab = "After Preprocessing", col = "lightgreen")
+```
+
+```{r, fig.width=8, fig.height=8}
+#Histogram 
+hist.data.frame(heart_train[sapply(heart_train, is.numeric)]) # Histogram of all data features  
+
+pairs(heart_train[sapply(heart_train, is.numeric)]) # pairwise scatter plots of predictor variables 
+```
+
+# Linear Modeling
+
+## Logistic Regression (Baseline)
+
+```{r}
+log_model <- train( HeartDisease ~ ., 
+  data = heart_train,
+  method = "glm",
+  family = "binomial",
+  metric = "ROC",
+  trControl = ctrl
+)
+
+log_preds <- predict(log_model, newdata = heart_test)
+confusionMatrix(log_preds, heart_test$HeartDisease)
+
+testResults <- data.frame(obs = heart_test$HeartDisease, LM = predict(log_model, heart_test[,1:11]))
+```
+
+## Ridge Logistic Regression (alpha = 0)
+
+```{r, fig.width=5, fig.height=3}
+ridge_grid <- expand.grid(alpha = 0, lambda = 10^seq(-4, 1, length = 100))
+
+set.seed(seed)
+ridge_model <- train(
+  HeartDisease ~ .,
+  data = heart_train,
+  method = "glmnet",
+  metric = "ROC",
+  trControl = ctrl,
+  tuneGrid = ridge_grid
+)
+
+ridge_preds <- predict(ridge_model, newdata = heart_test)
+confusionMatrix(ridge_preds, heart_test$HeartDisease)
+
+#plot model for view of tuning grid 
+plot(ridge_model)
+
+testResults$RR <- predict(ridge_model, heart_test[,1:11])
+```
+
+## Lasso Logistic Regression (alpha = 1)
+
+```{r, fig.width=5, fig.height=3}
+lasso_grid <- expand.grid(alpha = 1, lambda = 10^seq(-4, 1, length = 100))
+
+set.seed(seed)
+lasso_model <- train(
+  HeartDisease ~ .,
+  data = heart_train,
+  method = "glmnet",
+  metric = "ROC",
+  trControl = ctrl,
+  tuneGrid = lasso_grid
+)
+
+lasso_preds <- predict(lasso_model, newdata = heart_test)
+confusionMatrix(lasso_preds, heart_test$HeartDisease)
+
+#plot model for view of tuning grid  
+plot(lasso_model)
+
+testResults$LR <- predict(lasso_model, heart_test[,1:11])
+```
+
+## Elastic Net Logistic Regression (alpha = 0.5)
+
+```{r, fig.width=8, fig.height=7}
+elastic_grid <- expand.grid(alpha = 0.5, lambda = 10^seq(-4, 1, length = 100))
+
+set.seed(seed)
+elastic_model <- train(
+  HeartDisease ~ .,
+  data = heart_train,
+  method = "glmnet",
+  metric = "ROC",
+  trControl = ctrl,
+  tuneGrid = elastic_grid
+)
+
+elastic_preds <- predict(elastic_model, newdata = heart_test)
+confusionMatrix(elastic_preds, heart_test$HeartDisease)
+
+#plot model for view of tuning grid 
+plot(elastic_model)
+
+testResults$EN <- predict(elastic_model, heart_test[,1:11])
+```
+
+## Linear Modeling Final Notes
+
+Across all four linear models — logistic regression, ridge, lasso, and elastic net — we observe consistent performance challenges in distinguishing between positive (heart disease) and negative (no heart disease) cases. These results further validate the need to explore more flexible non-linear or ensemble models in the next phase.
+
+**Logistic Regression (Baseline):** Achieved the highest overall accuracy (58%) and balanced accuracy (61.5%), making it the most effective of the linear models. Its sensitivity was strong (96.3%), meaning it correctly identified most individuals with heart disease, but its specificity was low (26.7%), indicating many false positives. This makes it a conservative model in clinical settings where identifying disease is more critical than avoiding false alarms.
+
+**Ridge Regression (α = 0):** Performed the worst overall, with an accuracy of 44.8% and a balanced accuracy of just 50%, despite perfect sensitivity. The specificity collapsed to 2%, meaning the model misclassified nearly every negative case. This suggests heavy overfitting to the positive class under regularization.
+
+**Lasso Regression (α = 1):** Improved modestly over ridge, reaching 51% accuracy and 55.9% balanced accuracy. Specificity improved slightly (11.8%), though still low, while maintaining high sensitivity (100%). Lasso’s feature selection did not drastically enhance classification performance but showed potential in filtering irrelevant predictors.
+
+**Elastic Net (α = 0.5):** Resulted in 45.9% accuracy and 51% balanced accuracy, with performance metrics falling between lasso and ridge. Like ridge, it maintained 100% sensitivity but at the cost of very low specificity (1.98%), again pointing to poor negative class discrimination.
+
+**Overall**, the logistic regression model is the most balanced and interpretable, offering solid performance without the complexity of tuning. Penalized models did not offer substantial benefits and suffered from extreme class imbalance in predictions—especially evident in low specificity. These outcomes highlight the limitations of linear models for this task and suggest that non-linear models (e.g., random forest, XGBoost, or SVM) may better capture the complex relationships required to improve both specificity and overall predictive power.
+
+# Non-Linear Modeling
+
+## Extreme Gradient Boosting binary classification
+
+```{r, fig.width=8, fig.height=7}
+#Used ChatGPT to troubleshoot model 
+#https://chatgpt.com/share/684fe688-ca9c-800f-be55-534a23550567
+library(xgboost)
+# suppress warnings from xgboost
+old_params <- getOption("xgboost.silent")
+options(xgboost.silent = 1) 
+
+xgb_grid <- expand.grid(
+  nrounds = 100,                    # # trees
+  max_depth = c(3, 6),              # tree depth
+  eta = c(0.1, 0.3),                # learning rate
+  gamma = 0,                        # no regularization
+  colsample_bytree = 0.8,           # % columns sampled per tree
+  min_child_weight = 1,             # min sum hessian
+  subsample = 0.8                   # % rows sampled per tree
+)
+
+# Train XGBoost model
+set.seed(seed)
+xgb_model <- train(
+  HeartDisease ~ .,
+  data = heart_train, 
+  method = "xgbTree",
+  trControl = ctrl,
+  metric = "ROC",
+  tuneGrid = xgb_grid
+)
+
+# Create predictions on test set
+xgb_model_predictions <- data.frame(
+  actual = heart_test$HeartDisease,
+  pred = predict(xgb_model, heart_test)
+)
+
+# Confusion matrix
+conf_mat2 <- table(Predicted = xgb_model_predictions$pred, Actual = xgb_model_predictions$actual)
+print(conf_mat2)
+
+# Accuracy
+model_acc2 <- 100 * sum(diag(conf_mat2)) / sum(conf_mat2)
+print(model_acc2)
+
+# ROC and AUC
+library(pROC)
+prob_predictions <- predict(xgb_model, heart_test, type = "prob")
+
+xgb_ROC <- roc(heart_test$HeartDisease, prob_predictions$Yes)  # adjust if positive class is "Yes"
+plot(xgb_ROC)
+print(auc(xgb_ROC))
+
+# Save predictions
+testResults$XGB <- predict(xgb_model, heart_test[,1:11])
+
+options(xgboost.silent = old_params)
+```
+
+## Naive Bayes
+
+```{r}
+npGrid <- expand.grid(usekernel = FALSE, fL =1, adjust = 1)
+
+set.seed(seed)
+nb_Model <- train(x= x, y = y,
+                  method = "nb",
+                  tuneGrid = npGrid,
+                  trControl = ctrl)
+
+testResults$NB <- predict(nb_Model, heart_test[, 1:11] )
+```
+
+```{r}
+#Build Naive Bayes Model
+library(naivebayes)
+
+#build a Naive Bayes model with training data
+model3=naive_bayes(HeartDisease~.,data=heart_train)
+
+#Create predictions from Naive Bayes model
+model3_predictions = data.frame(actual = heart_test$HeartDisease,pred= predict(model3,heart_test))
+
+#Create confusion matrix for the predictions for Naive Bayes
+conf_mat3=table(model3_predictions)
+print(conf_mat3)
+
+#calculate accuracy from the confusion matrix for Naive Bayes
+model_acc3 = 100 * sum(diag(conf_mat3)) / sum(conf_mat3)
+print(model_acc3)
+
+#Calculating ROC and AUC for Naive Bayes model
+model3_ROC=roc(as.numeric(model3_predictions$actual),as.numeric(model3_predictions$pred))
+plot(model3_ROC)
+
+print(auc(model3_ROC))
+```
+
+## Ensemble Models
+
+### Decision Tree
+
+```{r}
+#Decision Tree 
+set.seed(seed)
+dtModel <- train(x = x, y= y,
+                 method = "rpart",
+                 tuneLength = 30,
+                 metric = "ROC",
+                 trControl = ctrl)
+
+testResults$DT <- predict(dtModel, heart_test[, 1:11] )
+```
+
+## Random Forest
+
+```{r, fig.width=5, fig.height=3}
+#Random Forest 
+#focused range 
+mtryValues <- 2:4
+
+set.seed(seed)
+rfModel <- train(x = x, 
+                y = y,
+                method = "rf",
+                ntree = 1000,
+                tuneGrid = data.frame(mtry = mtryValues),
+                metric = "ROC",
+                trControl = ctrl)
+
+ggplot(rfModel)
+testResults$RF <- predict(rfModel, heart_test[, 1:11] )
+```
+
+### K-Nearest Neighbors
+
+```{r}
+#KNN
+#remove non-zero variance to reduce noise 
+knnDescr <- x[, -nearZeroVar(x)] 
+knnTestDescr <- heart_test[, colnames(knnDescr)]
+
+set.seed(seed)
+knnModel <- train(x = knnDescr, y = y,
+                 method = "knn",
+                 tuneGrid = data.frame(k = 1:20),
+                 metric = "ROC",
+                 trControl = ctrl)
+
+testResults$KNN <- predict(knnModel, knnTestDescr)
+```
+
+### Neural Network
+
+```{r, fig.width=5, fig.height=3}
+#Neural Networks 
+#hyper parameter grid 
+nnetGrid <- expand.grid(#regularize coefficents,
+                        decay = c(0, 0.01, .1), 
+                        #Unites in a hidden layer
+                        size = c(1:10))
+
+set.seed(seed)
+nnModel <- train(x, y,
+                 method = "nnet",
+                 tuneGrid = nnetGrid,
+                 metric = "ROC",
+                 trControl = ctrl,
+                 trace = FALSE, maxit =500)
+nnModel
+ggplot(nnModel)
+ 
+testResults$NN <- predict(nnModel, heart_test[, 1:11])
+```
+
+# Test Results
+
+```{r}
+#add linear and non-linear models when ready 
+train_metrics <- resamples(list(LM = log_model,
+                                RR = ridge_model,
+                                LR = lasso_model,
+                                EN = elastic_model,
+                                XGB = xgb_model,
+                                NB = nb_Model,
+                                DT = dtModel, 
+                                RF= rfModel, 
+                                KNN = knnModel,
+                                NN = nnModel))
+
+summary(train_metrics)
+
+diff(train_metrics) |> summary()
+```
+
+## ROC AUC
+
+```{r, fig.width=15, fig.height=5}
+#Logistic Regression
+lmRoc <- roc(response = log_model$pred$obs,
+             predictor = log_model$pred$No,
+             levels = rev(levels(log_model$pred$obs)))
+#Ridge Regression
+rrRoc <- roc(response = ridge_model$pred$obs,
+             predictor = ridge_model$pred$No,
+             levels = rev(levels(ridge_model$pred$obs)))
+#Lasso Regression
+lrRoc <- roc(response = lasso_model$pred$obs,
+             predictor = lasso_model$pred$No,
+             levels = rev(levels(lasso_model$pred$obs)))
+#Elastic Net
+enRoc <- roc(response = elastic_model$pred$obs,
+             predictor = elastic_model$pred$No,
+             levels = rev(levels(elastic_model$pred$obs)))
+#XGBoost
+xgbRoc <- roc(response = xgb_model$pred$obs,
+             predictor = xgb_model$pred$No,
+             levels = rev(levels(xgb_model$pred$obs)))
+#Naive Bayes
+nbRoc <- roc(response = nb_Model$pred$obs,
+             predictor = nb_Model$pred$No,
+             levels = rev(levels(nb_Model$pred$obs)))
+#Decision Tree
+dtRoc <- roc(response = dtModel$pred$obs,
+             predictor = dtModel$pred$No,
+             levels = rev(levels(dtModel$pred$obs)))
+#Random Forest 
+rfRoc <- roc(response = rfModel$pred$obs,
+             predictor = rfModel$pred$No,
+             levels = rev(levels(rfModel$pred$obs)))
+#K-Nearest Neighbors
+knnRoc <- roc(response = knnModel$pred$obs,
+             predictor = knnModel$pred$No,
+             levels = rev(levels(knnModel$pred$obs)))
+#Neural Network
+nnRoc <- roc(response = nnModel$pred$obs,
+             predictor = nnModel$pred$No,
+             levels = rev(levels(nnModel$pred$obs)))
+
+#add non-linear models when ready 
+
+#plot together 
+par(mfrow=c(1,3))
+
+### Compare Models using ROC curve
+#linear models 
+plot(lmRoc, type = "s", col = 'orange2', legacy.axes = TRUE)
+plot(rrRoc, type = "s", add = TRUE, col = 'skyblue1', legacy.axes = TRUE)
+plot(lrRoc, type = "s", add = TRUE, col = 'palevioletred1', legacy.axes = TRUE)
+plot(enRoc, type = "s", add = TRUE, col = 'skyblue4', legacy.axes = TRUE)
+legend("bottomright", legend=c("LM","RR", "LR", "EN"),
+       col=c("orange2","skyblue1","palevioletred1", "skyblue4"), lwd=2)
+
+#non-linear models
+plot(xgbRoc, type = "s", col = 'cyan', legacy.axes = TRUE)
+plot(nbRoc, type = "s", add = TRUE, col = 'coral3', legacy.axes = TRUE)
+legend("bottomright", legend=c("XGB", "NB"),
+       col=c("cyan","coral3"), lwd=2)
+
+#ensemble models 
+plot(dtRoc, type = "s", col = 'red', legacy.axes = TRUE)
+plot(rfRoc, type = "s", add = TRUE, col = 'purple', legacy.axes = TRUE)
+plot(knnRoc, type = "s", add = TRUE, col = 'green', legacy.axes = TRUE)
+plot(nnRoc, type = "s", add = TRUE, col = 'blue', legacy.axes = TRUE)
+legend("bottomright", legend=c("DT", "RF", "KNN", "NN"),
+       col=c("red","purple", "green","blue"), lwd=2)
+```
+
+```{r, fig.width=8, fig.height=7}
+#Plot separate
+#linear models 
+plot(lmRoc, type = "s", col = 'orange2', legacy.axes = TRUE)
+plot(rrRoc, type = "s", add = TRUE, col = 'skyblue1', legacy.axes = TRUE)
+plot(lrRoc, type = "s", add = TRUE, col = 'palevioletred1', legacy.axes = TRUE)
+plot(enRoc, type = "s", add = TRUE, col = 'skyblue4', legacy.axes = TRUE)
+legend("bottomright", legend=c("LM","RR", "LR", "EN"),
+       col=c("orange2","skyblue1","palevioletred1", "skyblue4"), lwd=2)
+title(main = "Compare ROC Curves from Linear Models", outer = TRUE, 
+      line = -1)
+
+#non-linear models
+plot(xgbRoc, type = "s", col = 'cyan', legacy.axes = TRUE)
+plot(nbRoc, type = "s", add = TRUE, col = 'coral3', legacy.axes = TRUE)
+legend("bottomright", legend=c("XGB", "NB"),
+       col=c("cyan","coral3"), lwd=2)
+title(main = "Compare ROC Curves from Non-Linear Models", outer = TRUE, 
+      line = -1)
+
+#ensemble models 
+plot(dtRoc, type = "s", col = 'red', legacy.axes = TRUE)
+plot(rfRoc, type = "s", add = TRUE, col = 'purple', legacy.axes = TRUE)
+plot(knnRoc, type = "s", add = TRUE, col = 'green', legacy.axes = TRUE)
+plot(nnRoc, type = "s", add = TRUE, col = 'blue', legacy.axes = TRUE)
+legend("bottomright", legend=c("DT", "RF", "KNN", "NN"),
+       col=c("red","purple", "green","blue"), lwd=2)
+title(main = "Compare ROC Curves from Ensemble Models", outer = TRUE, 
+      line = -1)
+```
+
+## Accuracy
+
+```{r}
+accuracy <- function(true, pred) mean(true == pred)
+
+#add linear and non-linear models when ready 
+
+cat("LM accuracy:", accuracy(testResults$obs, testResults$LM), "\n")
+cat("RR accuracy:", accuracy(testResults$obs, testResults$RR), "\n")
+cat("LR accuracy:", accuracy(testResults$obs, testResults$LR), "\n")
+cat("EN accuracy:", accuracy(testResults$obs, testResults$EN), "\n")
+cat("XGB accuracy:", accuracy(testResults$obs, testResults$XGB), "\n")
+cat("NB accuracy:", accuracy(testResults$obs, testResults$NB), "\n")
+cat("DT accuracy:", accuracy(testResults$obs, testResults$DT), "\n")
+cat("RF accuracy:", accuracy(testResults$obs, testResults$RF), "\n")
+cat("KNN accuracy:", accuracy(testResults$obs, testResults$KNN), "\n")
+cat("NN accuracy:", accuracy(testResults$obs, testResults$NN), "\n")
+```
+
+## SHAP
+
+```{r, fig.width=7, fig.height=3}
+#Yadav, A. (2024). SHAP Values in R. Medium. https://medium.com/biased-algorithms/shap-values-in-r-c978a4c830c6
+
+#Create predictor object for optimum model  
+predRF <-  Predictor$new(rfModel, data = heart_test[,1:11], 
+                         y = heart_test$HeartDisease, type = "prob")
+
+#compute Shapley 
+shap_RF <- Shapley$new(predRF, x.interest = heart_test[1, 1:11])
+
+# View the SHAP values (each features contribution to the prediction)
+print(shap_RF$results)
+
+#Creat a summary plot 
+shap_RF$plot() 
+```
+
+# Conclusion
+
+Random Forest achieves the highest ROC performance in this analysis. However, statistical tests show that its ROC is not significantly better than several linear and regularized models (LR, Ridge, Lasso, Elastic Net) and XGBoost at the 95% confidence level. Given this, while RF remains a strong candidate for its high ROC and accuracy, XGBoost and regularized logistic models provide comparable performance with potentially greater interpretability or simplicity.
