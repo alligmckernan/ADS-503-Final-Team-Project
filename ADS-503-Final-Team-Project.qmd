@@ -533,7 +533,7 @@ diff(train_metrics) |> summary()
 
 ## ROC AUC
 
-```{r, fig.width=15, fig.height=7}
+```{r, fig.width=15, fig.height=5}
 #Logistic Regression
 lmRoc <- roc(response = log_model$pred$obs,
              predictor = log_model$pred$No,
@@ -602,8 +602,6 @@ plot(knnRoc, type = "s", add = TRUE, col = 'green', legacy.axes = TRUE)
 plot(nnRoc, type = "s", add = TRUE, col = 'blue', legacy.axes = TRUE)
 legend("bottomright", legend=c("DT", "RF", "KNN", "NN"),
        col=c("red","purple", "green","blue"), lwd=2)
-title(main = "Compare ROC curves from diffrent models", outer = TRUE, 
-      line = -1)
 ```
 
 ```{r, fig.width=8, fig.height=7}
@@ -658,7 +656,7 @@ cat("NN accuracy:", accuracy(testResults$obs, testResults$NN), "\n")
 
 ## SHAP
 
-```{r, fig.width=8, fig.height=7}
+```{r, fig.width=7, fig.height=3}
 #Yadav, A. (2024). SHAP Values in R. Medium. https://medium.com/biased-algorithms/shap-values-in-r-c978a4c830c6
 
 #Create predictor object for optimum model  
@@ -676,3 +674,5 @@ shap_RF$plot()
 ```
 
 # Conclusion
+
+Random Forest achieves the highest ROC performance in this analysis. However, statistical tests show that its ROC is not significantly better than several linear and regularized models (LR, Ridge, Lasso, Elastic Net) and XGBoost at the 95% confidence level. Given this, while RF remains a strong candidate for its high ROC and accuracy, XGBoost and regularized logistic models provide comparable performance with potentially greater interpretability or simplicity.
