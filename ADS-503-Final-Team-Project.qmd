@@ -1,5 +1,5 @@
 ---
-title: "Heart Failure Prediction – Data Preprocessing"
+title: "Heart Failure Prediction"
 author: "Team 4: Jorge Roldan, Nancy Walker, Alli McKernan"
 format: 
     html: 
@@ -38,6 +38,7 @@ library(DataExplorer)
 library(pROC)
 library(iml)
 library(ggplot2)
+library(shiny)
 
 seed <- 123
 ```
@@ -63,9 +64,11 @@ boxplot(heart_data[sapply(heart_data, is.numeric)],
         xlab = "Predictor Variables")
 
 #Histogram 
-hist.data.frame(heart_data[sapply(heart_data, is.numeric)]) # Histogram of all data features  
+hist.data.frame(heart_data[sapply(heart_data, is.numeric)])
+# Histogram of all data features  
 
-pairs(heart_data[sapply(heart_data, is.numeric)]) # pairwise scatter plots of predictor variables 
+pairs(heart_data[sapply(heart_data, is.numeric)]) 
+# pairwise scatter plots of predictor variables 
 ```
 
 ## Correlation of Numeric Variables
@@ -136,7 +139,8 @@ sapply(heart_data, function(x) sum(is.na(x)))
 Categorical variables are converted to factors to ensure compatibility with modeling algorithms.
 
 ```{r}
-heart_data$HeartDisease <- factor(heart_data$HeartDisease, levels = c(0, 1), labels = c("No", "Yes"))
+heart_data$HeartDisease <- factor(heart_data$HeartDisease, 
+                                  levels = c(0, 1), labels = c("No", "Yes"))
 heart_data$Sex <- as.factor(heart_data$Sex)
 heart_data$ChestPainType <- as.factor(heart_data$ChestPainType)
 heart_data$RestingECG <- as.factor(heart_data$RestingECG)
@@ -156,9 +160,11 @@ nzv
 ## Split the Data into Training and Testing Data sets
 
 ```{r}
-#create training dataset for heart_data_scaled #80% of data to the trianing dataset 
+#create training dataset for heart_data_scaled #80% 
+#of data to the trianing dataset 
 set.seed(seed) 
-trainingRows <- createDataPartition(heart_data$HeartDisease, p = .80, list = FALSE)
+trainingRows <- createDataPartition(heart_data$HeartDisease, 
+                                    p = .80, list = FALSE)
 
 #subset training and test datasets 
 trainingData <- heart_data[trainingRows,] 
@@ -174,7 +180,8 @@ numeric_features <- trainingData %>%
   select(where(is.numeric)) %>%
   names()
 
-preproc <- preProcess(trainingData[, numeric_features], method = c("center", "scale"))
+preproc <- preProcess(trainingData[, numeric_features], 
+                      method = c("center", "scale"))
 heart_data_train_scaled <- predict(preproc, trainingData)
 ```
 
@@ -224,9 +231,11 @@ boxplot(heart_train[sapply(heart_train, is.numeric)],
 
 ```{r, fig.width=8, fig.height=8}
 #Histogram 
-hist.data.frame(heart_train[sapply(heart_train, is.numeric)]) # Histogram of all data features  
+hist.data.frame(heart_train[sapply(heart_train, is.numeric)]) 
+# Histogram of all data features  
 
-pairs(heart_train[sapply(heart_train, is.numeric)]) # pairwise scatter plots of predictor variables 
+pairs(heart_train[sapply(heart_train, is.numeric)]) 
+# pairwise scatter plots of predictor variables 
 ```
 
 # Linear Modeling
@@ -245,7 +254,8 @@ log_model <- train( HeartDisease ~ .,
 log_preds <- predict(log_model, newdata = heart_test)
 confusionMatrix(log_preds, heart_test$HeartDisease)
 
-testResults <- data.frame(obs = heart_test$HeartDisease, LM = predict(log_model, heart_test[,1:11]))
+testResults <- data.frame(obs = heart_test$HeartDisease, 
+                          LM = predict(log_model, heart_test[,1:11]))
 ```
 
 ## Ridge Logistic Regression (alpha = 0)
@@ -374,7 +384,8 @@ xgb_model_predictions <- data.frame(
 )
 
 # Confusion matrix
-conf_mat2 <- table(Predicted = xgb_model_predictions$pred, Actual = xgb_model_predictions$actual)
+conf_mat2 <- table(Predicted = xgb_model_predictions$pred, 
+                   Actual = xgb_model_predictions$actual)
 print(conf_mat2)
 
 # Accuracy
@@ -385,7 +396,8 @@ print(model_acc2)
 library(pROC)
 prob_predictions <- predict(xgb_model, heart_test, type = "prob")
 
-xgb_ROC <- roc(heart_test$HeartDisease, prob_predictions$Yes)  # adjust if positive class is "Yes"
+xgb_ROC <- roc(heart_test$HeartDisease, prob_predictions$Yes)  
+# adjust if positive class is "Yes"
 plot(xgb_ROC)
 print(auc(xgb_ROC))
 
@@ -417,7 +429,8 @@ library(naivebayes)
 model3=naive_bayes(HeartDisease~.,data=heart_train)
 
 #Create predictions from Naive Bayes model
-model3_predictions = data.frame(actual = heart_test$HeartDisease,pred= predict(model3,heart_test))
+model3_predictions = data.frame(actual = heart_test$HeartDisease,
+                                pred= predict(model3,heart_test))
 
 #Create confusion matrix for the predictions for Naive Bayes
 conf_mat3=table(model3_predictions)
@@ -428,7 +441,8 @@ model_acc3 = 100 * sum(diag(conf_mat3)) / sum(conf_mat3)
 print(model_acc3)
 
 #Calculating ROC and AUC for Naive Bayes model
-model3_ROC=roc(as.numeric(model3_predictions$actual),as.numeric(model3_predictions$pred))
+model3_ROC=roc(as.numeric(model3_predictions$actual),
+               as.numeric(model3_predictions$pred))
 plot(model3_ROC)
 
 print(auc(model3_ROC))
@@ -657,7 +671,8 @@ cat("NN accuracy:", accuracy(testResults$obs, testResults$NN), "\n")
 ## SHAP
 
 ```{r, fig.width=7, fig.height=3}
-#Yadav, A. (2024). SHAP Values in R. Medium. https://medium.com/biased-algorithms/shap-values-in-r-c978a4c830c6
+#Yadav, A. (2024). SHAP Values in R. Medium. 
+#https://medium.com/biased-algorithms/shap-values-in-r-c978a4c830c6
 
 #Create predictor object for optimum model  
 predRF <-  Predictor$new(rfModel, data = heart_test[,1:11], 
@@ -671,6 +686,64 @@ print(shap_RF$results)
 
 #Creat a summary plot 
 shap_RF$plot() 
+```
+
+## RShiny 
+
+```{r}
+#Used Chat GPT to figure out how to create a shiny app of a 
+#Roc Curve https://chatgpt.com/share/685571d1-f978
+
+#List of ROC objects 
+roc_list <- list(
+  "Logistic Regression" = lmRoc,
+  "Ridge Logistic Regression" = rrRoc,
+  "Lasso Logistic Regression" = lrRoc,
+  "Elastic Net Logistic Regression" = enRoc,
+  "XGBoost" = xgbRoc,
+  "Naive Bayes" = nbRoc,
+  "Decision Tree" = dtRoc,
+  "Random Forest" = rfRoc,
+  "K-Nearest Neighbors" = knnRoc,
+  "Neural Network" = nnRoc
+)
+
+#User Interface that creates a dropdown selection of 
+#models used in this project.
+ui <- fluidPage(
+  titlePanel("ROC Curve Viewer"),
+  sidebarLayout(
+    sidebarPanel(
+      selectInput("predictor", "Select Model:",
+                  choices = names(roc_list)),
+    ),
+    mainPanel(
+      plotOutput("rocPlot"),
+      verbatimTextOutput("aucValue")
+    )
+  )
+)
+
+#Server that filters data based on the user's choice of model, 
+#then computes and displays the ROC and AUC.
+server <- function(input, output) {
+  
+  roc_obj <- reactive({
+    roc_list[[input$predictor]]
+  })
+  
+  output$rocPlot <- renderPlot({
+    plot(roc_obj(), type = "s", col = "blue", legacy.axes = TRUE,
+         main = paste("ROC Curve for", input$predictor))
+  })
+  
+  output$aucValue <- renderPrint({
+    auc(roc_obj())
+  })
+}
+
+shinyApp(ui = ui, server = server)
+
 ```
 
 # Conclusion
