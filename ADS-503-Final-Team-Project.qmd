@@ -255,7 +255,7 @@ log_preds <- predict(log_model, newdata = heart_test)
 confusionMatrix(log_preds, heart_test$HeartDisease)
 
 testResults <- data.frame(obs = heart_test$HeartDisease, 
-                          LM = predict(log_model, heart_test[,1:11]))
+                          LM = predict(log_model, heart_test[, 1:11]))
 ```
 
 ## Ridge Logistic Regression (alpha = 0)
@@ -279,7 +279,7 @@ confusionMatrix(ridge_preds, heart_test$HeartDisease)
 #plot model for view of tuning grid 
 plot(ridge_model)
 
-testResults$RR <- predict(ridge_model, heart_test[,1:11])
+testResults$RR <- predict(ridge_model, heart_test[, 1:11])
 ```
 
 ## Lasso Logistic Regression (alpha = 1)
@@ -303,7 +303,7 @@ confusionMatrix(lasso_preds, heart_test$HeartDisease)
 #plot model for view of tuning grid  
 plot(lasso_model)
 
-testResults$LR <- predict(lasso_model, heart_test[,1:11])
+testResults$LR <- predict(lasso_model, heart_test[, 1:11])
 ```
 
 ## Elastic Net Logistic Regression (alpha = 0.5)
@@ -327,7 +327,7 @@ confusionMatrix(elastic_preds, heart_test$HeartDisease)
 #plot model for view of tuning grid 
 plot(elastic_model)
 
-testResults$EN <- predict(elastic_model, heart_test[,1:11])
+testResults$EN <- predict(elastic_model, heart_test[, 1:11])
 ```
 
 ## Linear Modeling Final Notes
@@ -402,7 +402,7 @@ plot(xgb_ROC)
 print(auc(xgb_ROC))
 
 # Save predictions
-testResults$XGB <- predict(xgb_model, heart_test[,1:11])
+testResults$XGB <- predict(xgb_model, heart_test[, 1:11])
 
 options(xgboost.silent = old_params)
 ```
@@ -418,7 +418,7 @@ nb_Model <- train(x= x, y = y,
                   tuneGrid = npGrid,
                   trControl = ctrl)
 
-testResults$NB <- predict(nb_Model, heart_test[, 1:11] )
+testResults$NB <- predict(nb_Model, heart_test[, 1:11])
 ```
 
 ```{r}
@@ -446,6 +446,48 @@ model3_ROC=roc(as.numeric(model3_predictions$actual),
 plot(model3_ROC)
 
 print(auc(model3_ROC))
+```
+
+## Support Vector Machines 
+
+```{r}
+#Used ChatGPT to trouble shoot NA warning on SVM model
+#https://chatgpt.com/share/6858305d-5ad8-800f-82e7-4ba1ca12d171
+#Convert factor variabels to numeric codes for 
+#sigma estimation 
+x_numeric <- x 
+x_numeric <- data.frame(lapply(x_numeric, function(col) {
+  if (is.factor(col)) as.numeric(col) else col
+}))
+
+#Creat SVM grid 
+sigmaEst <- kernlab::sigest(as.matrix(x_numeric))
+svmgrid <- expand.grid(sigma = sigmaEst, C = 2^seq(-4,+4))
+
+set.seed(seed)
+svmModel <- train(x = x_numeric, y= y,
+                 method = "svmRadial",
+                 tuneGrid = svmgrid,
+                 metric = "ROC",
+                 trControl = ctrl)
+
+#Create heart_test_numeric for model predictions
+heart_test_numeric <- heart_test
+#remove HeartDisease Column 
+heart_test_numeric <- heart_test_numeric[, colnames(heart_test_numeric) != "HeartDisease"]
+
+
+for(col in names(heart_test_numeric)) {
+  if (is.factor(heart_test_numeric[[col]])) {
+    # Match factor levels to training levels
+    heart_test_numeric[[col]] <- factor(heart_test_numeric[[col]], levels = levels(x[[col]]))
+    # Convert factor to numeric codes
+    heart_test_numeric[[col]] <- as.numeric(heart_test_numeric[[col]])
+  }
+}
+
+# Predict
+testResults$svm <- predict(svmModel, heart_test_numeric)
 ```
 
 ## Ensemble Models
@@ -513,7 +555,7 @@ nnetGrid <- expand.grid(#regularize coefficents,
                         size = c(1:10))
 
 set.seed(seed)
-nnModel <- train(x, y,
+nnModel <- train(x = x, y= y,
                  method = "nnet",
                  tuneGrid = nnetGrid,
                  metric = "ROC",
@@ -528,13 +570,13 @@ testResults$NN <- predict(nnModel, heart_test[, 1:11])
 # Test Results
 
 ```{r}
-#add linear and non-linear models when ready 
 train_metrics <- resamples(list(LM = log_model,
                                 RR = ridge_model,
                                 LR = lasso_model,
                                 EN = elastic_model,
                                 XGB = xgb_model,
                                 NB = nb_Model,
+                                SVM = svmModel,
                                 DT = dtModel, 
                                 RF= rfModel, 
                                 KNN = knnModel,
@@ -572,6 +614,10 @@ xgbRoc <- roc(response = xgb_model$pred$obs,
 nbRoc <- roc(response = nb_Model$pred$obs,
              predictor = nb_Model$pred$No,
              levels = rev(levels(nb_Model$pred$obs)))
+#Support Vector Machines 
+svmRoc <- roc(response = svmModel$pred$obs,
+             predictor = svmModel$pred$No,
+             levels = rev(levels(svmModel$pred$obs)))
 #Decision Tree
 dtRoc <- roc(response = dtModel$pred$obs,
              predictor = dtModel$pred$No,
@@ -606,8 +652,9 @@ legend("bottomright", legend=c("LM","RR", "LR", "EN"),
 #non-linear models
 plot(xgbRoc, type = "s", col = 'cyan', legacy.axes = TRUE)
 plot(nbRoc, type = "s", add = TRUE, col = 'coral3', legacy.axes = TRUE)
-legend("bottomright", legend=c("XGB", "NB"),
-       col=c("cyan","coral3"), lwd=2)
+plot(svmRoc, type = "s", add = TRUE, col = 'lightgreen', legacy.axes = TRUE)
+legend("bottomright", legend=c("XGB", "NB", "SVM"),
+       col=c("cyan","coral3", "lightgreen"), lwd=2)
 
 #ensemble models 
 plot(dtRoc, type = "s", col = 'red', legacy.axes = TRUE)
@@ -633,8 +680,9 @@ title(main = "Compare ROC Curves from Linear Models", outer = TRUE,
 #non-linear models
 plot(xgbRoc, type = "s", col = 'cyan', legacy.axes = TRUE)
 plot(nbRoc, type = "s", add = TRUE, col = 'coral3', legacy.axes = TRUE)
-legend("bottomright", legend=c("XGB", "NB"),
-       col=c("cyan","coral3"), lwd=2)
+plot(svmRoc, type = "s", add = TRUE, col = 'lightgreen', legacy.axes = TRUE)
+legend("bottomright", legend=c("XGB", "NB", "SVM"),
+       col=c("cyan","coral3", "lightgreen"), lwd=2)
 title(main = "Compare ROC Curves from Non-Linear Models", outer = TRUE, 
       line = -1)
 
@@ -662,6 +710,7 @@ cat("LR accuracy:", accuracy(testResults$obs, testResults$LR), "\n")
 cat("EN accuracy:", accuracy(testResults$obs, testResults$EN), "\n")
 cat("XGB accuracy:", accuracy(testResults$obs, testResults$XGB), "\n")
 cat("NB accuracy:", accuracy(testResults$obs, testResults$NB), "\n")
+cat("SVM accuracy:", accuracy(testResults$obs, testResults$svm), "\n")
 cat("DT accuracy:", accuracy(testResults$obs, testResults$DT), "\n")
 cat("RF accuracy:", accuracy(testResults$obs, testResults$RF), "\n")
 cat("KNN accuracy:", accuracy(testResults$obs, testResults$KNN), "\n")
@@ -688,7 +737,7 @@ print(shap_RF$results)
 shap_RF$plot() 
 ```
 
-## RShiny 
+## RShiny
 
 ```{r}
 #Used Chat GPT to figure out how to create a shiny app of a 
@@ -702,6 +751,7 @@ roc_list <- list(
   "Elastic Net Logistic Regression" = enRoc,
   "XGBoost" = xgbRoc,
   "Naive Bayes" = nbRoc,
+  "Support Vector Machine" = svmRoc,
   "Decision Tree" = dtRoc,
   "Random Forest" = rfRoc,
   "K-Nearest Neighbors" = knnRoc,
